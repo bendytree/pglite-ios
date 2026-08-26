@@ -10,7 +10,8 @@ do similarity search over AI embeddings locally.
 This is not a SQLite lookalike. It's PostgreSQL 17.5 itself — the same
 query engine, the same SQL, the same transactions and crash recovery you
 get from a hosted Postgres. If your app talks to Postgres in the cloud,
-the local database behaves the same way. Adds about 21 MB to your app.
+the local database behaves the same way. Size cost: about 8 MB on your
+app's download, about 27 MB installed (Postgres is a big program).
 iOS 15+ and macOS 13+, App Store compatible.
 
 **Credit where due:** this builds on
@@ -111,6 +112,8 @@ configurable memory cap is on the roadmap.
 - Queries pass through shared memory — no sockets or files per query.
   Writes are durable the same way Postgres is always durable (write-ahead
   log + fsync).
+- Size: ~20 MB of installed machine code + ~7 MB of data files. Because
+  the code compresses well, the App Store download grows by only ~8 MB.
 
 ## Repository layout
 

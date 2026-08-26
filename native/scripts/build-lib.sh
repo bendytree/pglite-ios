@@ -31,7 +31,8 @@ case "$FLAVOR" in
   *) echo "unknown flavor $FLAVOR" >&2; exit 2 ;;
 esac
 
-CFLAGS=(-O2 -g "${TARGET_FLAGS[@]}" -I"$RT" -Igen -Ishim -Ibridge)
+# PGLITE_DBG=-g0 builds without debug info (used for release packaging).
+CFLAGS=(-O2 ${PGLITE_DBG:--g} "${TARGET_FLAGS[@]}" -I"$RT" -Igen -Ishim -Ibridge)
 
 for f in wasm-rt-impl wasm-rt-mem-impl wasm-rt-exceptions-impl; do
   [ -f "$OUT/obj/$f.o" ] || clang "${CFLAGS[@]}" -c "$RT/$f.c" -o "$OUT/obj/$f.o" &

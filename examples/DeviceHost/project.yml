@@ -1,0 +1,56 @@
+# Minimal signed host app so the PGliteKit test suite can run on a physical
+# device (tool-hosted SwiftPM test bundles are simulator/macOS-only).
+# Test sources are referenced directly from the package — no copies.
+#
+#   xcodegen generate
+#   xcodebuild test -project PGliteHost.xcodeproj -scheme PGliteHost \
+#     -destination 'platform=iOS,id=<device-udid>' -allowProvisioningUpdates
+#
+# Set DEVELOPMENT_TEAM (and bundle ids) to your own team before use.
+name: PGliteHost
+options:
+  bundleIdPrefix: com.allstarapps
+  deploymentTarget:
+    iOS: "16.0"
+packages:
+  PGliteKit:
+    path: ../..
+settings:
+  base:
+    DEVELOPMENT_TEAM: 768Z86F8ET
+    CODE_SIGN_STYLE: Automatic
+targets:
+  PGliteHost:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    dependencies:
+      - package: PGliteKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.allstarapps.pglitehost
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        GENERATE_INFOPLIST_FILE: YES
+  PGliteHostTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ../../Tests/PGliteKitTests
+    dependencies:
+      - target: PGliteHost
+      - package: PGliteKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.allstarapps.pglitehost-tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/PGliteHost.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PGliteHost
+        BUNDLE_LOADER: $(TEST_HOST)
+schemes:
+  PGliteHost:
+    build:
+      targets:
+        PGliteHost: all
+        PGliteHostTests: [test]
+    test:
+      targets:
+        - PGliteHostTests

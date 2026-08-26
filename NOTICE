@@ -1,0 +1,49 @@
+PGliteKit
+Copyright (c) 2026 Joshua Wright
+
+This repository's original code (Swift package, WASI shim, bridge, build
+scripts) is MIT licensed (see LICENSE). It builds upon and redistributes
+the following third-party software, each under its own license.
+
+--------------------------------------------------------------------------
+PostgreSQL / electric-sql postgres-pglite
+--------------------------------------------------------------------------
+The built module (pglite.wasi) and runtime filesystem bundle are builds of
+PostgreSQL 17.5 from the electric-sql/postgres-pglite fork (branch
+REL_17_5_WASM-pglite; exact commit pinned in module/versions.env),
+distributed under the PostgreSQL License:
+
+    Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
+    Portions Copyright (c) 1994, The Regents of the University of California
+
+The PostgreSQL License text ships as COPYRIGHT inside every built bundle
+and must accompany redistributed binaries. The patches under
+module/patches/ modify that source tree and are likewise governed by the
+PostgreSQL License.
+
+--------------------------------------------------------------------------
+wasipg (moznion)
+--------------------------------------------------------------------------
+The module build recipe (module/build.sh, Dockerfile, pack.sh, hotfix/,
+and the patch series module/patches/wasipg/) is derived from the wasipg
+project, Copyright 2026 Taiki Kawakami (a.k.a moznion), licensed under the
+Apache License, Version 2.0:
+    https://github.com/moznion/wasipg
+
+--------------------------------------------------------------------------
+pgvector
+--------------------------------------------------------------------------
+pgvector (statically linked into the module; version pinned in
+module/versions.env) is Copyright (c) 2021-2024, Andrew Kane, distributed
+under the PostgreSQL License:
+    https://github.com/pgvector/pgvector
+
+--------------------------------------------------------------------------
+wabt (WebAssembly Binary Toolkit)
+--------------------------------------------------------------------------
+The wasm-rt runtime sources vendored under native/runtime/ are from wabt,
+Copyright the WebAssembly Community Group participants, licensed under the
+Apache License, Version 2.0:
+    https://github.com/WebAssembly/wabt
+The generated C under native/gen/ is produced by wabt's wasm2c from the
+PostgreSQL-derived module and is governed by the PostgreSQL License.

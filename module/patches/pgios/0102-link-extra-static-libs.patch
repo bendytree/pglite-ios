@@ -1,0 +1,11 @@
+--- a/pglite-wasm/build.sh
++++ b/pglite-wasm/build.sh
+@@ -105,7 +105,7 @@
+              $LINK_ICU \
+              ${PG_BUILD}/${BUILD}/src/backend/snowball/libdict_snowball.a \
+              ${PG_BUILD}/${BUILD}/src/pl/plpgsql/src/libplpgsql.a \
+-             -lxml2 -lz ${LINK_SETJMP:-}
++             -lxml2 -lz ${LINK_SETJMP:-} ${EXTRA_PG_LIBS:-}
+         else
+             echo "compilation of libpglite ${BUILD} support failed"
+         fi

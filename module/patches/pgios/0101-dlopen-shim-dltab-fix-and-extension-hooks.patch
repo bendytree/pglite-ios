@@ -1,0 +1,69 @@
+diff --git a/wasm-build/sdk_port-wasi/sdk_port-wasi-dlfcn.c b/wasm-build/sdk_port-wasi/sdk_port-wasi-dlfcn.c
+index 44dac9e..316f05d 100644
+--- a/wasm-build/sdk_port-wasi/sdk_port-wasi-dlfcn.c
++++ b/wasm-build/sdk_port-wasi/sdk_port-wasi-dlfcn.c
+@@ -81,7 +81,12 @@ ends_with(const char *str, const char *suffix)
+ 
+ // dlfcn.h
+ 
+-volatile dict_t* dltab[];
++/* pgios fix: this was a tentative 1-element array ("dict_t* dltab[]")
++ * indexed past its end, and slot 0 was never assigned, so lookups
++ * dereferenced a NULL dict (guest address 0 = live CMA request bytes).
++ * Make it a real array and keep every slot initialized. */
++#define DLTAB_MAX 64
++static dict_t dltab[DLTAB_MAX];
+ volatile int dltab_index = 0;
+ 
+ void *
+@@ -126,24 +131,37 @@ extern void plpgsql_validator(void);
+ 
+ extern void _PG_init(void);
+ 
++/* Statically-linked extension hook: a generated object may override
++ * these to resolve extra extension symbols (e.g. pgvector). */
++__attribute__((weak)) void *
++pglite_extra_dlsym(const char *symbol) {
++    return NULL;
++}
++__attribute__((weak)) void
++pglite_extra_dlopen(const char *filename) {
++}
++
+ 
+ void *
+ dlopen(const char *filename, int flags) {
+     dict_t tab = NULL;
+     fprintf(stderr,"void *dlopen(const char *filename = %s, int flags=%d)\n", filename, flags);
+     for (int i=0; i< dltab_index; i++) {
+-        if ( dict_find_index(dltab[i], filename) > 0 )
+-            return (void *)i;
++        if ( dltab[i] && dict_find_index(dltab[i], filename) >= 0 )
++            return (void *)(i + 1);
+     }
+     printf("dlopen: new lib '%s'\n", filename );
+     if ( ends_with(filename,"/plpgsql.so") ){
+         puts(" ========= CALLING _PG_init =========");
+         _PG_init();
+     }
++    pglite_extra_dlopen(filename);
+ 
++    if (dltab_index >= DLTAB_MAX)
++        return NULL;
+     tab = dict_new();
+-    dict_add(tab, filename, dltab_index++ );
+-    dltab[dltab_index] = tab;
++    dict_add(tab, filename, dltab_index);
++    dltab[dltab_index++] = tab;
+ 
+     return (void *)dltab_index;
+ }
+@@ -191,6 +209,8 @@ dlsym(void *__restrict handle, const char *__restrict symbol) {
+     }
+ 
+ report:;
++    if (sym == NULL)
++        sym = pglite_extra_dlsym(symbol);
+     fprintf(stderr, "void *dlsym(void *handle = %p, const char *symbol = %s) => %p\n", handle, symbol, sym);
+     return sym;
+ }

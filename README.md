@@ -1,34 +1,34 @@
-# pglite-ios — real PostgreSQL, embedded in your iOS app
+# pglite-ios — a real Postgres database inside your iOS app
 
-**What this is:** full PostgreSQL 17.5 — the actual parser, planner,
-executor, WAL, and MVCC engine, not a SQLite wrapper — plus
-[pgvector](https://github.com/pgvector/pgvector) 0.8.0, compiled to native
-arm64 code and linked into your app as a Swift package (`PGliteKit`). Your
-app gets a persistent, transactional, crash-recovering Postgres database
-that works fully offline, with vector similarity search built in. No
-server process, no JIT, App Store compatible. iOS 15+ and macOS 13+.
+Put a genuine PostgreSQL database inside your iPhone or Mac app. It runs
+entirely on the device — no server, no internet connection — and it's
+fast: everything is compiled to native code, most queries finish in under
+a millisecond, and the database opens in about a third of a second. It
+also includes [pgvector](https://github.com/pgvector/pgvector), so you can
+do similarity search over AI embeddings locally.
 
-**Whose work this leverages:** this project is a thin native layer on the
-shoulders of others. [PGlite](https://github.com/electric-sql/pglite) by
-[ElectricSQL](https://electric-sql.com) (with the WASI flavor pioneered by
-[@pmp-p](https://github.com/pmp-p)) patched PostgreSQL to run as a
-single-process WebAssembly engine. [wasipg](https://github.com/moznion/wasipg)
-by [@moznion](https://github.com/moznion) made the WASI build production-shaped
-— real error recovery via wasm exception handling, reproducible pinned
-builds. [wabt](https://github.com/WebAssembly/wabt)'s wasm2c turns the
-wasm module into plain C we compile for iOS. PostgreSQL itself is the
-PostgreSQL Global Development Group's. See [NOTICE](NOTICE) for licenses.
-This repository adds the pgvector static linking, the wasm2c/iOS build
-pipeline, a WASI→POSIX shim, and the Swift API — **built by Anthropic's
-Claude (Fable)**.
+This is not a SQLite lookalike. It's PostgreSQL 17.5 itself — the same
+query engine, the same SQL, the same transactions and crash recovery you
+get from a hosted Postgres. If your app talks to Postgres in the cloud,
+the local database behaves the same way. Adds about 21 MB to your app.
+iOS 15+ and macOS 13+, App Store compatible.
+
+**Credit where due:** this builds on
+[PGlite](https://github.com/electric-sql/pglite) by
+[ElectricSQL](https://electric-sql.com), which reworked PostgreSQL to run
+as a single process ([@pmp-p](https://github.com/pmp-p) pioneered the
+variant we use), and on [wasipg](https://github.com/moznion/wasipg) by
+[@moznion](https://github.com/moznion), which made that variant solid and
+reproducible. This repository adds the iOS build pipeline, pgvector, and
+the Swift API — **built by Anthropic's Claude (Fable)**. Licenses in
+[NOTICE](NOTICE).
 
 ## Using it
 
 ```swift
 import PGliteKit
 
-let db = try PGliteDatabase(root: sandboxDir)   // first boot seeds a
-                                                // pristine PGDATA (~0.3 s)
+let db = try PGliteDatabase(root: sandboxDir)   // opens in ~0.3 s
 try await db.execute("CREATE EXTENSION IF NOT EXISTS vector")
 try await db.execute("CREATE TABLE items (id serial, e vector(3))")
 try await db.execute("INSERT INTO items (e) VALUES ($1::vector)",
@@ -43,101 +43,97 @@ try await db.withTransaction { db in
 }
 ```
 
-Real Postgres semantics throughout: transactions, SQLSTATE-mapped errors
-that never kill the engine, extended protocol with typed parameters
-(`.int/.string/.double/.bool/.bytes/.uuid/.date/.vector`), HNSW/IVFFlat
-vector indexes, and WAL crash recovery — the suite passes on macOS, the
-iOS simulator, and physical iPhone hardware.
+Everything works the way Postgres normally works: transactions,
+parameterized queries with typed values
+(`.int/.string/.double/.bool/.bytes/.uuid/.date/.vector`), error codes
+(SQLSTATE) — and a failed query never takes the database down. Vector
+indexes (HNSW, IVFFlat) work. The test suite passes on macOS, the iOS
+simulator, and physical iPhones.
 
-## Adding it to your iOS app
+## Adding it to your app
 
-1. In Xcode: **File → Add Package Dependencies…** and enter this repo's
-   URL (or add it to `Package.swift` dependencies). Pin a release tag.
-2. Add `PGliteKit` to your target, `import PGliteKit`.
-3. Pick a directory in your sandbox (e.g.
-   `FileManager.default.urls(for: .applicationSupportDirectory, …)` +
-   `"db"`) and create `PGliteDatabase(root:)` once, at startup. First
-   launch seeds the data directory; later launches resume it.
-4. Treat it as one connection: keep the instance in one place (it's an
-   actor), and call `close()` on the way out of the app if you want a
-   clean checkpoint (data survives regardless — WAL recovery handles
-   force-quits).
+1. In Xcode: **File → Add Package Dependencies…**, paste this repo's URL,
+   and pin a release tag.
+2. Add `PGliteKit` to your target and `import PGliteKit`.
+3. Pick a folder in your app's sandbox (Application Support is the usual
+   choice) and create `PGliteDatabase(root:)` once at startup. The first
+   launch sets up the data directory; later launches just reopen it.
+4. Keep that one instance and run all queries through it — it's one
+   database connection, and the type is an actor so it's safe to use from
+   async Swift. Calling `close()` on the way out is polite but optional:
+   if the app is killed, Postgres's crash recovery brings the data back
+   intact on the next open.
 
 Building from a fresh clone instead of a release: `brew install wabt`,
-then `make xcframework && swift test` (release tags ship the prebuilt
-xcframework as an asset so consumers skip this).
+then `make xcframework && swift test`.
 
-## The localhost connection string
+## Letting other things connect (the connection string)
 
-`PGliteServer` optionally exposes the engine as a real PostgreSQL server
-on `127.0.0.1`, so anything that speaks the Postgres wire protocol — a
-webview bridge, a JS runtime, PostgresNIO/libpq code that also talks to
+Normally your Swift code calls the database directly. But you can also
+turn on a tiny local server so anything that speaks the Postgres protocol
+— a webview, a JavaScript runtime, the same driver code you use against
 your hosted Postgres — can connect with an ordinary connection string:
 
 ```swift
-let server = PGliteServer(db: db)   // random 72-char password per launch
-try server.start()                  // random ephemeral port
+let server = PGliteServer(db: db)   // random password, new every launch
+try server.start()                  // random port on 127.0.0.1
 server.connectionString
 // postgresql://postgres:<random>@127.0.0.1:<port>/template1
 ```
 
-**The connection string is the capability.** iOS loopback is
-device-global — any app on the device can reach an open port — so the
-server verifies the MD5 handshake host-side (constant-time) before a
-single byte reaches the engine. Hand the string only to the consumer you
-intend; without it, connections are rejected. One client at a time; all
-clients share the single backend session with the app's own queries;
-`sslmode=disable` (it's loopback).
+**Whoever has the connection string can connect; nobody else can.** On
+iOS, `127.0.0.1` is shared by every app on the device, so the port itself
+is not protection — the password is. The server checks it before the
+database sees anything, the password is random on every launch, and it
+only exists in memory. Hand the string to the one consumer you intend
+(e.g. inject it into your webview) and that's the whole security model.
+One client at a time; use `sslmode=disable` (it's loopback, there's no
+network).
 
 ## Memory
 
-The engine lives in one 32-bit wasm linear memory: ~25 MB at boot, grows
-on demand — and, like any wasm memory, **never shrinks until the process
-restarts**. A large sort or HNSW index build permanently raises the
-footprint, which matters under iOS memory pressure (jetsam). Practical
-guidance today: keep `work_mem`/`maintenance_work_mem` modest (SET them
-for big index builds), avoid gratuitous multi-hundred-MB operations on
-old devices, and recycle the instance (`close()` + reopen, ~0.3 s) after
-heavy maintenance or on memory warnings. A configurable hard cap is on
-the roadmap.
+The database keeps all of its working memory in one block that grows as
+needed but never shrinks until the app restarts. Day-to-day use sits
+around 25–40 MB. A huge sort or a big vector-index build can push that up
+and it stays up — which matters on older iPhones, where the OS kills
+memory-hungry apps. Rules of thumb: don't run enormous one-shot
+operations casually, and if you do (or you get a memory warning), close
+and reopen the database — that's ~0.3 s and releases everything. A
+configurable memory cap is on the roadmap.
 
 ## Performance
 
-- Ahead-of-time compiled native code — no interpreter, no JIT. The full
-  test suite (boot + DDL + DML + vector KNN + HNSW build) runs ~6–7×
-  faster than the same wasm module under Node/V8.
-- First boot ~0.3 s (pristine seed, no initdb); resume boots similar.
-  Simple queries run in the sub-millisecond-to-millisecond range on
-  M-series and recent iPhones (~0.8 s for an entire 10-statement test
-  case on an iPhone 17 Pro, boot included).
-- Queries travel over an in-memory channel — zero file/socket I/O per
-  query. Durability is Postgres WAL + `fsync`.
-- Cost: ~21 MB added binary, ~7 MB resources. On physical devices the
-  build uses explicit bounds checks (the fastest wasm2c mode aborts on
-  iOS hardware); at app workloads the difference is not perceptible.
+- Compiled to native code ahead of time — no interpreter, no JIT. Around
+  6–7× faster than running the same engine in a JavaScript runtime.
+- Opens in ~0.3 s. Simple queries take well under a millisecond on
+  recent iPhones; an entire 10-statement test case, including opening the
+  database, runs in ~0.8 s on an iPhone 17 Pro.
+- Queries pass through shared memory — no sockets or files per query.
+  Writes are durable the same way Postgres is always durable (write-ahead
+  log + fsync).
 
 ## Repository layout
 
 | path | contents |
 |---|---|
 | `Sources/`, `Tests/`, `Package.swift` | the Swift package (`PGliteKit`) |
-| `module/` | reproducible Docker build of `pglite.wasi` from sha-pinned sources + patches |
-| `native/` | wasm2c generation, WASI→POSIX shim, C bridge, vendored wasm-rt runtime, native tests |
-| `examples/DeviceHost/` | xcodegen host app for running the suite on a physical device |
-| `docs/` | feasibility and engineering reports (phases 0–2) |
+| `module/` | rebuilds the PostgreSQL engine from pinned sources + our patches (Docker) |
+| `native/` | turns the engine into iOS/macOS static libraries, plus the C glue and tests |
+| `examples/DeviceHost/` | small host app for running the test suite on a physical device |
+| `docs/` | the feasibility and engineering reports behind this project |
 
 ## Building everything from source
 
 ```sh
-brew install wabt xcodegen        # wasm2c + example project generation
-./module/build.sh                 # 1. pglite.wasi from pinned sources (Docker, ~4 min)
-make xcframework                  # 2. wasm2c → static libs → build/PGliteC.xcframework
-make resources                    # 3. refresh package resources from the module
-make test                         # 4. native C suite + swift test
+brew install wabt xcodegen        # build tools
+./module/build.sh                 # 1. rebuild the engine (Docker, ~4 min)
+make xcframework                  # 2. compile it for iOS device + simulator + macOS
+make resources                    # 3. refresh the package's bundled data files
+make test                         # 4. run the C and Swift test suites
 ```
 
-Steps 1 and 3 only matter when the module changes; day-to-day Swift work
-needs `make xcframework` once, then plain `swift test`.
+Steps 1 and 3 only matter when the engine itself changes; day-to-day
+Swift work needs `make xcframework` once, then plain `swift test`.
 
 Device run: `cd examples/DeviceHost && xcodegen generate && xcodebuild test
 -project PGliteHost.xcodeproj -scheme PGliteHost -destination
@@ -146,30 +142,32 @@ Device run: `cd examples/DeviceHost && xcodegen generate && xcodebuild test
 
 ## How it works
 
+PostgreSQL can't normally run on iOS: it forks processes, and iOS forbids
+that (and forbids just-in-time compilation, which rules out ordinary
+WebAssembly runtimes too). The path around both restrictions:
+
 ```mermaid
 flowchart LR
-    A[postgres-pglite\nREL_17_5_WASM @ pinned sha] -->|wasipg + pgios patches\nwasi-sdk 33, Docker| B[pglite.wasi\n36 pure-WASI imports]
-    B -->|wasm2c| C[C shards ×16]
-    C -->|clang, per platform| D[PGliteC.xcframework]
-    D --> E[PGliteKit\nactor + wire codec]
-    E --> F[app code]
-    E --> G[PGliteServer\n127.0.0.1 wire protocol]
+    A[PostgreSQL 17.5\npatched to run as one process] -->|compiled to\nWebAssembly| B[pglite.wasi]
+    B -->|translated to\nplain C - wasm2c| C[C source]
+    C -->|clang, per platform| D[static library]
+    D --> E[PGliteKit\nSwift API]
+    E --> F[your app]
+    E --> G[optional local server\n127.0.0.1]
 ```
 
-- Single connection, single-threaded, actor-isolated.
-- Postgres ERROR recovery works via setjmp/longjmp lowered onto the
-  standardized wasm exception-handling proposal, carried through wasm2c.
-- On-device data lives under the root directory you choose
-  (`<root>/tmp/pglite/base`); within a PostgreSQL major version the
-  on-disk format is stable — app updates just reopen the same data.
-
-## Dependency + update policy
-
-- Every input is pinned by commit/sha256 in `module/versions.env`; local
-  changes are reviewable patch files (`module/patches/`), not a fork.
-- PG 17 is supported upstream until ~2029. A future PG 18 module requires
-  porting the WASI flavor to the newer branch plus a one-time
-  dump/restore data migration, shipped with whichever release needs it.
+- ElectricSQL's patched PostgreSQL compiles to WebAssembly; wasm2c
+  translates that module into plain C; clang compiles the C for each
+  Apple platform. The result is an ordinary static library — no runtime,
+  no interpreter.
+- Every ingredient is pinned to an exact version and checksum in
+  `module/versions.env`, and our changes are small reviewable patch files
+  in `module/patches/` — so the whole engine rebuilds bit-for-bit
+  reproducibly.
+- Your data lives under the folder you choose; within a PostgreSQL major
+  version the storage format is stable, so app updates just reopen the
+  same data. Moving to a future major version (Postgres 18+) will ship
+  with a one-time migration when it's needed.
 
 ## License
 

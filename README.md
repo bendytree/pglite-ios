@@ -11,7 +11,8 @@ This is not a SQLite lookalike. It's PostgreSQL 17.5 itself — the same
 query engine, the same SQL, the same transactions and crash recovery you
 get from a hosted Postgres. If your app talks to Postgres in the cloud,
 the local database behaves the same way. Size cost: about 8 MB on your
-app's download, about 27 MB installed (Postgres is a big program).
+app's download, about 27 MB on disk once installed (Postgres is a big
+program); RAM while running is typically 25–40 MB (see Memory below).
 iOS 15+ and macOS 13+, App Store compatible.
 
 **Credit where due:** this builds on
@@ -67,6 +68,28 @@ simulator, and physical iPhones.
 
 Building from a fresh clone instead of a release: `brew install wabt`,
 then `make xcframework && swift test`.
+
+### Where your data lives
+
+Everything is stored under the `root:` folder you pass to
+`PGliteDatabase` — the database files themselves end up at
+`<root>/tmp/pglite/base/`. (That `tmp/pglite` is the engine's internal
+layout, not iOS's temp directory — on disk it's just subfolders of your
+chosen root.)
+
+```swift
+let root = FileManager.default.urls(
+    for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    .appendingPathComponent("db")
+let db = try PGliteDatabase(root: root)
+```
+
+- Use **Application Support**, as above. Never put the root in `tmp/` or
+  `Caches/` — iOS purges those, taking your database with them.
+- Application Support is included in iCloud/device backups by default.
+  If your local database is just a re-syncable mirror of a server, set
+  `isExcludedFromBackup` on the root URL to keep backups slim.
+- Files inherit iOS's standard at-rest encryption (data protection).
 
 ## Letting other things connect (the connection string)
 
